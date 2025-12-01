@@ -364,6 +364,10 @@ class OCAB(nn.Module):
                 ):
 
         super().__init__()
+        weight_sample = torch.distributions.Beta(5, 1).sample() # skewed toward 1; want starting weight to favor softmax to keep in line with original structure, prevent unstable optim
+        weight_sample = -torch.log((1/weight_sample)-1) # inverse sigmoid
+        self.ast_weight = nn.Parameter(data=weight_sample, requires_grad=True) 
+
         self.dim = dim
         self.input_resolution = input_resolution
         self.window_size = window_size
@@ -417,14 +421,21 @@ class OCAB(nn.Module):
         v = v_windows.reshape(b_, n, self.num_heads, d).permute(0, 2, 1, 3) # nw*b, nH, n, d
 
         q = q * self.scale
-        attn = (q @ k.transpose(-2, -1))
+        attn = (q @ k.transpose(-2, -1)) # nw*b, nH, nq, n
 
         relative_position_bias = self.relative_position_bias_table[rpi.view(-1)].view(
             self.window_size * self.window_size, self.overlap_win_size * self.overlap_win_size, -1)  # ws*ws, wse*wse, nH
         relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, ws*ws, wse*wse
         attn = attn + relative_position_bias.unsqueeze(0)
 
-        attn = self.softmax(attn)
+        # AST modification =============================
+        attn_softmax = self.softmax(attn)
+        attn_relu = nn.ReLU()(attn)**2
+        weight_softmax = nn.Sigmoid()(self.ast_weight) # worth noting that in the AST paper they use two weights, but, seemingly, it's equivalent to just using one, since they softmax the weights
+        weight_relu = 1-weight_softmax
+        attn = attn_softmax*weight_softmax + attn_relu*weight_relu
+        # ==============================================
+
         attn_windows = (attn @ v).transpose(1, 2).reshape(b_, nq, self.dim)
 
         # merge windows
@@ -434,6 +445,7 @@ class OCAB(nn.Module):
 
         x = self.proj(x) + shortcut
 
+        #TODO: CHANGE THIS MLP TO BE THE FRFN FROM AST (maybe, we'll see)
         x = x + self.mlp(self.norm2(x))
         return x
 
