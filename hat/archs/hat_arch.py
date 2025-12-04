@@ -410,7 +410,8 @@ class OCAB(nn.Module):
                 ):
 
         super().__init__()
-        weight_sample = torch.distributions.Beta(5, 1).sample() # skewed toward 1; want starting weight to favor softmax to keep in line with original structure, prevent unstable optim
+        weight_sample = torch.tensor([0.0])
+        weight_sample.uniform_(0.3, 0.7)
         weight_sample = -torch.log((1/weight_sample)-1) # inverse sigmoid
         self.ast_weight = nn.Parameter(data=weight_sample, requires_grad=True) 
 
