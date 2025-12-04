@@ -366,29 +366,29 @@ class FRFN(nn.Module):
         self.dim_untouched = self.dim - self.dim_conv 
         self.partial_conv3 = nn.Conv2d(self.dim_conv, self.dim_conv, 3, 1, 1, bias=False)
 
-    def forward(self, x):
+    def forward(self, x, h, w):
         # bs x hw x c
         bs, hw, c = x.size()
-        hh = int(math.sqrt(hw))
+        # hh = int(math.sqrt(hw))
 
 
         # spatial restore
-        x = rearrange(x, ' b (h w) (c) -> b c h w ', h = hh, w = hh)
+        x = rearrange(x, ' b (h w) (c) -> b c h w ', h = h, w = w)
 
         x1, x2,= torch.split(x, [self.dim_conv,self.dim_untouched], dim=1)
         x1 = self.partial_conv3(x1)
         x = torch.cat((x1, x2), 1)
 
         # flaten
-        x = rearrange(x, ' b c h w -> b (h w) c', h = hh, w = hh)
+        x = rearrange(x, ' b c h w -> b (h w) c', h = h, w = w)
 
         x = self.linear1(x)
         #gate mechanism
         x_1,x_2 = x.chunk(2,dim=-1)
 
-        x_1 = rearrange(x_1, ' b (h w) (c) -> b c h w ', h = hh, w = hh)
+        x_1 = rearrange(x_1, ' b (h w) (c) -> b c h w ', h = h, w = w)
         x_1 = self.dwconv(x_1)
-        x_1 = rearrange(x_1, ' b c h w -> b (h w) c', h = hh, w = hh)
+        x_1 = rearrange(x_1, ' b c h w -> b (h w) c', h = h, w = w)
         x = x_1 * x_2
         
         x = self.linear2(x)
@@ -494,7 +494,7 @@ class OCAB(nn.Module):
 
         x = self.proj(x) + shortcut
 
-        x = x + self.frfn(self.norm2(x))
+        x = x + self.frfn(self.norm2(x), h, w)
         return x
 
 
